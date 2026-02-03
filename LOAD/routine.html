@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Routine</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Create Custom Routine</h1>
+        <form id="routine-form">
+            <div class="field">
+                <label for="routine-name">Routine Name</label>
+                <input type="text" id="routine-name" required>
+            </div>
+            <div id="days-container"></div>
+            <button type="button" id="add-day-btn">Add Day</button>
+            <button type="submit">Save Routine</button>
+        </form>
+    </div>
+    <script src="routine.js"></script>
+    <script>
+        let dayCount = 0;
+        
+        function addDayField() {
+            dayCount++;
+            const container = document.getElementById('days-container');
+            const div = document.createElement('div');
+            div.className = 'field';
+            div.innerHTML = `
+                <label for="day-${dayCount}">Day ${dayCount} Label</label>
+                <input type="text" id="day-${dayCount}" required>
+            `;
+            container.appendChild(div);
+        }
+        
+        document.getElementById('add-day-btn').onclick = addDayField;
+        
+        document.getElementById('routine-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('routine-name').value;
+            const days = [];
+            
+            for (let i = 1; i <= dayCount; i++) {
+                const dayInput = document.getElementById(`day-${i}`);
+                if (dayInput) {
+                    days.push({
+                        dayIndex: i - 1,
+                        label: dayInput.value
+                    });
+                }
+            }
+            
+            const routine = {
+                id: Date.now().toString(),
+                name: name,
+                days: days,
+                isPremade: false
+            };
+            
+            saveRoutine(routine);
+            window.location.href = 'home.html';
+        });
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            addDayField();
+        });
+    </script>
+</body>
+</html>

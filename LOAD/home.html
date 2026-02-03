@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workout Log - Routines</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Select Routine</h1>
+        <div id="main-view">
+            <div id="current-routine-display"></div>
+            <div id="routines-list"></div>
+            <button id="create-routine-btn">Create Custom Routine</button>
+            <button id="view-history-btn">View History</button>
+            <button id="export-data-btn">Export Data</button>
+            <div class="reset-section">
+                <button id="reset-data-btn">Reset All Data</button>
+            </div>
+        </div>
+        <div id="history-view" style="display: none;">
+            <button id="back-to-main-btn">Back</button>
+            <h2>Workout History</h2>
+            <div id="history-list"></div>
+            <div id="history-detail" style="display: none;"></div>
+        </div>
+    </div>
+    <script src="routine.js"></script>
+    <script>
+        function displayCurrentRoutine() {
+            const activeRoutineId = getActiveRoutineId();
+            const displayEl = document.getElementById('current-routine-display');
+            
+            if (!activeRoutineId) {
+                displayEl.innerHTML = '';
+                return;
+            }
+            
+            const routines = getRoutines();
+            const activeRoutine = routines.find(r => r.id === activeRoutineId);
+            if (!activeRoutine) {
+                displayEl.innerHTML = '';
+                return;
+            }
+            
+            const currentDay = getCurrentRoutineDay();
+            if (!currentDay) {
+                displayEl.innerHTML = '';
+                return;
+            }
+            
+            const activeSession = getActiveWorkoutSession();
+            const isWorkoutActive = activeSession && activeSession.status === 'active';
+            const isRest = isRestDay(currentDay);
+            
+            let sessionStatus = 'No active workout';
+            if (isWorkoutActive) {
+                sessionStatus = 'Workout in progress';
+            }
+            
+            let exerciseSection = '';
+            if (isWorkoutActive) {
+                const exercises = activeSession.exercises || [];
+                let exerciseList = '';
+                exercises.forEach(ex => {
+                    const sets = ex.sets || [];
+                    let setsDisplay = '';
+                    sets.forEach((set, idx) => {
+                        setsDisplay += `<p>Set ${idx + 1}: ${set.reps} x ${set.weight}</p>`;
+                    });
+                    
+                    const lastWorkoutSets = getLastWorkoutSetsForExercise(ex.name);
+                    let lastWorkoutDisplay = '';
+                    if (lastWorkoutSets) {
+                        lastWorkoutDisplay = '<p>Last time:</p>';
+                        lastWorkoutSets.forEach(set => {
+                            lastWorkoutDisplay += `<p>${set.reps} x ${set.weight}</p>`;
+                        });
+                    }
+                    
+                    exerciseList += `
+                        <div class="exercise-item" id="exercise-${ex.id}">
+                            <p><strong>${ex.name}</strong></p>
+                            ${lastWorkoutDisplay}
+                            ${setsDisplay}
+                            <div class="exercise-controls">
+                                <input type="number" class="reps-input" data-exercise-id="${ex.id}" placeholder="Reps">
+                                <input type="number" class="weight-input" data-exercise-id="${ex.id}" placeholder="Weight">
+                                <div class="exercise-buttons">
+                                    <button class="add-set-btn" data-exercise-id="${ex.id}">Add Set</button>
+                                    ${sets.length > 0 ? `<button class="delete-last-set-btn" data-exercise-id="${ex.id}">Delete Last Set</button>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                let premadeButtons = '<div>';
+                getPremadeExercises().forEach(exName => {
+                    premadeButtons += `<button class="exercise-btn" data-exercise="${exName}">${exName}</button>`;
+                });
+                premadeButtons += '</div>';
+                
+                exerciseSection = `
+                    ${exerciseList}
+                    ${premadeButtons}
+                    <div>
+                        <input type="text" id="custom-exercise-input" placeholder="Custom exercise name">
+                        <button id="add-custom-exercise-btn">Add Custom Exercise</button>
+                    </div>
+                `;
+            }
+            
+            const streak = getStreak();
+            
+            displayEl.innerHTML = `
+                <div>
+                    <p><strong>${activeRoutine.name}</strong></p>
+                    <p>Current Day: ${currentDay.label}</p>
+                    ${isRest ? '<p>Rest Day</p>' : ''}
+                    <p>Streak: ${streak.current} (Best: ${streak.best})</p>
+                    <p>${sessionStatus}</p>
+                    ${!isWorkoutActive && !isRest ? '<button id="start-workout-btn">Start Workout</button>' : ''}
+                    ${!isWorkoutActive && !isRest ? '<button id="skip-day-btn">Skip Day</button>' : ''}
+                    ${!isWorkoutActive && isRest ? '<button id="skip-rest-day-btn">Skip Rest Day</button>' : ''}
+                    ${isWorkoutActive ? '<div class="workout-end-section"><button id="end-workout-btn">End Workout</button></div>' : ''}
+                    ${exerciseSection}
+                </div>
+            `;
+            
+            if (!isWorkoutActive && !isRest) {
+                document.getElementById('start-workout-btn').onclick = () => {
+                    startWorkoutSession();
+                    displayCurrentRoutine();
+                };
+                document.getElementById('skip-day-btn').onclick = () => {
+                    skipTrainingDay();
+                    displayCurrentRoutine();
+                };
+            } else if (!isWorkoutActive && isRest) {
+                document.getElementById('skip-rest-day-btn').onclick = () => {
+                    advanceRoutineDay();
+                    displayCurrentRoutine();
+                };
+            } else if (isWorkoutActive) {
+                document.getElementById('end-workout-btn').onclick = () => {
+                    endWorkoutSession();
+                    displayCurrentRoutine();
+                };
+                
+                document.querySelectorAll('.exercise-btn').forEach(btn => {
+                    btn.onclick = () => {
+                        const exerciseName = btn.getAttribute('data-exercise');
+                        addExerciseToSession(exerciseName);
+                        displayCurrentRoutine();
+                        setTimeout(() => {
+                            const activeSession = getActiveWorkoutSession();
+                            if (activeSession && activeSession.exercises) {
+                                const lastExercise = activeSession.exercises[activeSession.exercises.length - 1];
+                                if (lastExercise) {
+                                    const exerciseEl = document.getElementById(`exercise-${lastExercise.id}`);
+                                    if (exerciseEl) {
+                                        exerciseEl.scrollIntoView({ block: 'nearest' });
+                                        const repsInput = exerciseEl.querySelector('.reps-input');
+                                        if (repsInput) {
+                                            repsInput.focus();
+                                        }
+                                    }
+                                }
+                            }
+                        }, 0);
+                    };
+                });
+                
+                document.getElementById('add-custom-exercise-btn').onclick = () => {
+                    const input = document.getElementById('custom-exercise-input');
+                    const exerciseName = input.value.trim();
+                    if (exerciseName) {
+                        addExerciseToSession(exerciseName);
+                        input.value = '';
+                        displayCurrentRoutine();
+                        setTimeout(() => {
+                            const activeSession = getActiveWorkoutSession();
+                            if (activeSession && activeSession.exercises) {
+                                const lastExercise = activeSession.exercises[activeSession.exercises.length - 1];
+                                if (lastExercise) {
+                                    const exerciseEl = document.getElementById(`exercise-${lastExercise.id}`);
+                                    if (exerciseEl) {
+                                        exerciseEl.scrollIntoView({ block: 'nearest' });
+                                        const repsInput = exerciseEl.querySelector('.reps-input');
+                                        if (repsInput) {
+                                            repsInput.focus();
+                                        }
+                                    }
+                                }
+                            }
+                        }, 0);
+                    }
+                };
+                
+                document.querySelectorAll('.add-set-btn').forEach(btn => {
+                    btn.onclick = () => {
+                        const exerciseId = btn.getAttribute('data-exercise-id');
+                        const repsInput = document.querySelector(`.reps-input[data-exercise-id="${exerciseId}"]`);
+                        const weightInput = document.querySelector(`.weight-input[data-exercise-id="${exerciseId}"]`);
+                        const reps = repsInput.value;
+                        const weight = weightInput.value;
+                        if (reps && weight) {
+                            addSetToExercise(exerciseId, reps, weight);
+                            repsInput.value = '';
+                            weightInput.value = '';
+                            displayCurrentRoutine();
+                            setTimeout(() => {
+                                const exerciseEl = document.getElementById(`exercise-${exerciseId}`);
+                                if (exerciseEl) {
+                                    exerciseEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                    const newRepsInput = exerciseEl.querySelector('.reps-input');
+                                    if (newRepsInput) {
+                                        newRepsInput.focus();
+                                    }
+                                }
+                            }, 0);
+                        }
+                    };
+                });
+                
+                document.querySelectorAll('.delete-last-set-btn').forEach(btn => {
+                    btn.onclick = () => {
+                        const exerciseId = btn.getAttribute('data-exercise-id');
+                        deleteLastSetFromExercise(exerciseId);
+                        displayCurrentRoutine();
+                    };
+                });
+            }
+        }
+        
+        function loadRoutines() {
+            const routines = getRoutines();
+            const activeRoutineId = getActiveRoutineId();
+            const listEl = document.getElementById('routines-list');
+            
+            listEl.innerHTML = '';
+            
+            routines.forEach(routine => {
+                const div = document.createElement('div');
+                div.className = 'routine-item';
+                if (routine.id === activeRoutineId) {
+                    div.classList.add('active');
+                }
+                
+                const name = document.createElement('span');
+                name.textContent = routine.name;
+                div.appendChild(name);
+                
+                const selectBtn = document.createElement('button');
+                selectBtn.textContent = routine.id === activeRoutineId ? 'Active' : 'Select';
+                selectBtn.disabled = routine.id === activeRoutineId;
+                selectBtn.onclick = () => {
+                    setActiveRoutineId(routine.id);
+                    loadRoutines();
+                    displayCurrentRoutine();
+                };
+                div.appendChild(selectBtn);
+                
+                listEl.appendChild(div);
+            });
+        }
+        
+        function showHistoryView() {
+            document.getElementById('main-view').style.display = 'none';
+            document.getElementById('history-view').style.display = 'block';
+            loadHistory();
+        }
+        
+        function showMainView() {
+            document.getElementById('main-view').style.display = 'block';
+            document.getElementById('history-view').style.display = 'none';
+            document.getElementById('history-detail').style.display = 'none';
+        }
+        
+        function loadHistory() {
+            const completedWorkouts = getCompletedWorkouts();
+            const historyListEl = document.getElementById('history-list');
+            historyListEl.innerHTML = '';
+            
+            if (completedWorkouts.length === 0) {
+                historyListEl.innerHTML = '<p>No workout history</p>';
+                return;
+            }
+            
+            const routines = getRoutines();
+            const reversedWorkouts = [...completedWorkouts].reverse();
+            
+            reversedWorkouts.forEach((workout, index) => {
+                const routine = routines.find(r => r.id === workout.routineId);
+                const routineName = routine ? routine.name : 'Unknown Routine';
+                const day = routine && routine.days ? routine.days[workout.routineDayIndex] : null;
+                const dayLabel = day ? day.label : 'Unknown Day';
+                
+                const div = document.createElement('div');
+                div.className = 'history-item';
+                div.innerHTML = `
+                    <p><strong>${routineName}</strong> - ${dayLabel}</p>
+                    <p>Workout ${completedWorkouts.length - index}</p>
+                `;
+                div.onclick = () => {
+                    showWorkoutDetail(workout, routineName, dayLabel);
+                };
+                historyListEl.appendChild(div);
+            });
+        }
+        
+        function showWorkoutDetail(workout, routineName, dayLabel) {
+            const detailEl = document.getElementById('history-detail');
+            detailEl.style.display = 'block';
+            
+            let detailHtml = `
+                <h3>${routineName} - ${dayLabel}</h3>
+            `;
+            
+            if (!workout.exercises || workout.exercises.length === 0) {
+                detailHtml += '<p>No exercises</p>';
+            } else {
+                workout.exercises.forEach(ex => {
+                    detailHtml += `<p><strong>${ex.name}</strong></p>`;
+                    if (!ex.sets || ex.sets.length === 0) {
+                        detailHtml += '<p>No sets</p>';
+                    } else {
+                        ex.sets.forEach(set => {
+                            detailHtml += `<p>${set.reps} x ${set.weight}</p>`;
+                        });
+                    }
+                });
+            }
+            
+            detailEl.innerHTML = detailHtml;
+            detailEl.scrollIntoView({ block: 'start' });
+        }
+        
+        document.getElementById('create-routine-btn').onclick = () => {
+            window.location.href = 'routine.html';
+        };
+        
+        document.getElementById('view-history-btn').onclick = () => {
+            showHistoryView();
+        };
+        
+        document.getElementById('back-to-main-btn').onclick = () => {
+            showMainView();
+        };
+        
+        document.getElementById('export-data-btn').onclick = () => {
+            exportAllData();
+        };
+        
+        document.getElementById('reset-data-btn').onclick = () => {
+            resetAllData();
+        };
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            initializePremadeRoutines();
+            loadRoutines();
+            displayCurrentRoutine();
+        });
+    </script>
+</body>
+</html>
